@@ -41,7 +41,8 @@ def test(model, baseline, baseline_name):
     print("-*-*-*- Resultados de Validação -*-*-*-")
     model.val(
         data=baseline,
-        max_det=1
+        max_det=1,
+        conf=0.5
     )
 
     if baseline_name != 'fovea_baseline':
@@ -49,7 +50,8 @@ def test(model, baseline, baseline_name):
         model.val(
             data=baseline,
             split='test',
-            max_det=1
+            max_det=1,
+            conf=0.5
         )
 
 # Train model and run results for test images

@@ -1,8 +1,9 @@
 import os
 import cv2
 import argparse
+import pandas as pd
 from ultralytics import YOLO
-from src.utils.assess_quality import getEdgeDistance
+from src.utils.assess_quality import getEdgeDistance, getEdgeDistanceReal
 
 '''
 RUN YOLO MODEL ON RETINAL IMAGE
@@ -31,6 +32,17 @@ def showResults(results):
         print(names)
         confs = result.boxes.conf  # confidence score of each box
         print(confs)
+
+# Returns prediction confidence, bbox center
+# coordinates and width from bbox object
+# Parameters:
+#   - bboxResults: bounding box ultralytics object
+def extractInformationFromPred(bboxResults):
+    confidence = bboxResults[0].boxes.conf.item()
+    centerCoords = [bboxResults[0].boxes.xywh[0][0].item(), bboxResults[0].boxes.xywh[0][1].item()]
+    width = bboxResults[0].boxes.xywh[0][2].item()
+
+    return confidence, centerCoords, width
 
 # Given a path to trained weights, load a yolo model
 # Parameters:
@@ -97,19 +109,20 @@ def draw_boxes(image, results, color, objectName=""):
                     thickness,
                     lineType=cv2.LINE_AA)
 
-# Get prediction results from running od and fovea detection
+# Get prediction results from running od and fovea detection,
+# with minimum confidence of 0.5
 # Parameters:
 #   - imagePath: path to the image to run the models
 #   - odModel: model instance to detect OD
 #   - foveaModel: model instance to detect fovea
 #   - saveImg: bool, save or not the image
 #   - output_path: where to save the image
-def getPredictions(imagePath, odModel, foveaModel, saveImg, output_path="./src/data/images",):
+def getPredictions(imagePath, odModel, foveaModel, saveImg=False, output_path="./src/data/images",):
     _, fileName = os.path.split(imagePath)
     image = cv2.imread(imagePath)
 
-    odResults = odModel(imagePath)
-    foveaResults = foveaModel(imagePath)
+    odResults = odModel.predict(imagePath, conf=0.5, max_det=1)
+    foveaResults = foveaModel.predict(imagePath, conf=0.5, max_det=1)
 
     draw_boxes(image, odResults, color=(0, 170, 0), objectName="Optic Disc: ")
     draw_boxes(image, foveaResults, color=(255, 0, 0), objectName="Fovea: ")
@@ -121,24 +134,60 @@ def getPredictions(imagePath, odModel, foveaModel, saveImg, output_path="./src/d
 
 # Given a dataset path, run the model on all the images of the dataset
 # Parameters:
-#   - dataPath: path to the dataset
-#   - model: model instance
-def runModelOnDataset(args, saveImg=True):
-    imagesInfo = []
+#   - args: input arguments
+#   - saveImg: whether to save images inferences from models
+def runBRSetInferences(args, saveImg=False):
+    writeFile = 'retinalInformation'
+    labelsPath = '/scratch/diogo.alves/datasets/brset/physionet.org/files/brazilian-ophthalmological/1.0.0/labels.csv'
 
     odModel = loadModel(args.od_weights)
     foveaModel = loadModel(args.fovea_weights)
 
+    labels = pd.read_csv(labelsPath)
+    records = []
+
     for image in os.listdir(args.data_path):
-        _, extension = os.path.splitext(image)
+        imageId, extension = os.path.splitext(image)
         
         if extension == '.jpg':
-            results = getCoordinates(os.path.join(args.data_path, image), odModel)
-            imagesInfo.append(results)
+            imagePath = os.path.join(args.data_path, image)
+            
+            odInfo, foveaInfo = getPredictions(imagePath, odModel, foveaModel, saveImg)
+            if not len(odInfo[0]) or not len(foveaInfo[0]):
+                print(f"Could not detect Optic Disc or Fovea for {image}")
+                continue
 
-    showResults(imagesInfo[0])
+            odConfidence, odCenterCoords, discDiameter = extractInformationFromPred(odInfo)
+            foveaConfidence, foveaCenterCoords, _ = extractInformationFromPred(foveaInfo)
+
+            nasalDistance, temporalDistance, theta = getEdgeDistanceReal(os.path.join(args.data_path, image), odInfo[0], foveaInfo[0], saveNasalPoint=False)
+            row = labels[labels['image_id'] == imageId]
+
+            if not row.empty:
+                if row.iloc[0]['image_field'] == 1:
+                    label = 'Adequate'
+                else:
+                    label = 'Inadequate'
+            
+                records.append({
+                    'image_id': imageId,
+                    'quality_label': label,
+                    'od_confidence': odConfidence,
+                    'fovea_confidence': foveaConfidence,
+                    'disc_diameter': discDiameter,
+                    'od_center_x': odCenterCoords[0],
+                    'od_center_y': odCenterCoords[1],
+                    'fovea_center_x': foveaCenterCoords[0],
+                    'fovea_center_y': foveaCenterCoords[1],
+                    'nasal_distance': nasalDistance,
+                    'temporal_distance': temporalDistance,
+                    'od_fovea_angle': theta
+                })
     
-    return imagesInfo
+    df = pd.DataFrame(records)
+    df.to_csv(f'data/{writeFile}.csv', index=False)
+
+    print(f"Wrote inferences to data/{writeFile}.csv")
 
 # Given an image path, run the model on the specific image
 # Parameters:
@@ -154,16 +203,21 @@ def runModelOnImage(args, saveImg=True, showResults=False):
     # Run the model on an image to locate optic disc and fovea
     odInfo, foveaInfo = getPredictions(imagePath, odModel, foveaModel, saveImg)
     
+    if not len(odInfo[0]) or not len(foveaInfo[0]):
+        print(f"Could not detect Optic Disc or Fovea for {args.image}.jpg")
+        return
+    
     if showResults is True:
         showResults(odInfo)
         showResults(foveaInfo)
     
     discDiameter = odInfo[0].boxes.xywh[0][2].item()
-    print(f'O diâmetro do disco óptico é: {discDiameter:.2f}')
+    print(f'The optic disc diameter is: {discDiameter:.2f}')
 
     # Detect the distance between the edges and the optic disc/fovea
-    nasalDistance = getEdgeDistance(imagePath, odInfo[0], structure='od')
-    temporalDistance = getEdgeDistance(imagePath, foveaInfo[0], structure='fovea')
+    nasalDistance, temporalDistance = getEdgeDistanceReal(imagePath, odInfo[0], foveaInfo[0])
+    # nasalDistance = getEdgeDistance(imagePath, odInfo[0], structure='od')
+    # temporalDistance = getEdgeDistance(imagePath, foveaInfo[0], structure='fovea')
 
     if nasalDistance < discDiameter:
         print(f"The image is inadequate. Criteria: [1] the distance from the OD to the nasal edge ({nasalDistance:.2f}) is lower than 1DD ({discDiameter:.2f}).")
@@ -177,13 +231,12 @@ def main(args):
         runModelOnImage(args, saveImg=True)
 
     elif args.image is None:
-        runModelOnDataset(args, saveImg=False)
+        runBRSetInferences(args, saveImg=False)
 
-# python main.py --image img01233   
+# python main.py --image img01233 >> "./data/logs/run.log" 2>&1
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Assess image field definition (BRSet)")
 
-    # img = img10829
     parser.add_argument('--image', type=str, default=None, help='Fundus image name')
     parser.add_argument('--data-path', type=str, default='/scratch/diogo.alves/datasets/brset/physionet.org/files/brazilian-ophthalmological/1.0.0/fundus_photos/', help='Fundus image dataset path')
     parser.add_argument('--od-weights', type=str, default='/home/rodrigocm/research/YOLO-on-fundus-images/src/models/runs/detect/od_baseline1/train_results/weights', help='OD detection weights path')
