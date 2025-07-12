@@ -215,7 +215,7 @@ def runModelOnImage(args, saveImg=True, showResults=False):
     print(f'The optic disc diameter is: {discDiameter:.2f}')
 
     # Detect the distance between the edges and the optic disc/fovea
-    nasalDistance, temporalDistance = getEdgeDistanceReal(imagePath, odInfo[0], foveaInfo[0])
+    nasalDistance, temporalDistance, theta = getEdgeDistanceReal(imagePath, odInfo[0], foveaInfo[0])
     # nasalDistance = getEdgeDistance(imagePath, odInfo[0], structure='od')
     # temporalDistance = getEdgeDistance(imagePath, foveaInfo[0], structure='fovea')
 
@@ -239,7 +239,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--image', type=str, default=None, help='Fundus image name')
     parser.add_argument('--data-path', type=str, default='/scratch/diogo.alves/datasets/brset/physionet.org/files/brazilian-ophthalmological/1.0.0/fundus_photos/', help='Fundus image dataset path')
-    parser.add_argument('--od-weights', type=str, default='/home/rodrigocm/research/YOLO-on-fundus-images/src/models/runs/detect/od_baseline1/train_results/weights', help='OD detection weights path')
+    parser.add_argument('--od-weights', type=str, default='/home/rodrigocm/research/YOLO-on-fundus-images/src/models/runs/detect/od_baseline2/train_results/weights', help='OD detection weights path')
     parser.add_argument('--fovea-weights', type=str, default='/home/rodrigocm/research/YOLO-on-fundus-images/src/models/runs/detect/fovea/train_results/weights', help='Fovea detection weights path')
 
     args = parser.parse_args()

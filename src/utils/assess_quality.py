@@ -1,5 +1,6 @@
 import os
 import cv2
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely.geometry import LineString, Point, Polygon
@@ -108,6 +109,19 @@ def getBboxInformation(imageInfo, structure):
 
     return np.array([cx, cy]), width, height
 
+# Calculate the angle theta between the ODCenter
+# and foveaCenter
+# Parameters:
+#   - odCenter: np array with optic disc center coordinates
+#   - foveaCenter: np array with fovea center coordinates
+def calculateAngleDeg(odCenter, foveaCenter):
+    dx = foveaCenter[0] - odCenter[0]
+    dy = foveaCenter[1] - odCenter[1]
+
+    angleRad = math.atan2(abs(dy), abs(dx))
+
+    return math.degrees(angleRad)
+
 # Extract nasal point from OD, given a
 # Fovea-OD unit vector, pointing to the
 # nasal edge
@@ -120,7 +134,8 @@ def getNasalPointOnOD(odCenter, width, height, nasalUnitVector):
     cx, cy = odCenter
     ux, uy = nasalUnitVector
 
-    # retorna 1000 pontos, no intervalo [0, 2pi] (intervalo de angulos da elipse)
+    # retorna 1000 pontos, no intervalo [0, 2pi]
+    # e calcula equacoes parametricas da elipse
     ts = np.linspace(0, 2*np.pi, 1000)
     xs = (width/2) * np.cos(ts)
     ys = (height/2) * np.sin(ts)
@@ -134,7 +149,7 @@ def getNasalPointOnOD(odCenter, width, height, nasalUnitVector):
     x_nasal = cx + xs[idx]
     y_nasal = cy + ys[idx]
 
-    return x_nasal, y_nasal, ts[idx]
+    return x_nasal, y_nasal
 
 # Calculate distance from a point to its
 # closest edge (temporal or nasal)
@@ -188,8 +203,10 @@ def getEdgeDistanceReal(imagePath, odInfo, foveaInfo, saveNasalPoint=True, outpu
     temporalUnitVector = odFoveaVector / np.linalg.norm(odFoveaVector)
     nasalUnitVector = -temporalUnitVector
 
-    nasalX, nasalY, theta = getNasalPointOnOD(odCenter, width, height, nasalUnitVector)
+    nasalX, nasalY = getNasalPointOnOD(odCenter, width, height, nasalUnitVector)
     nasalPoint = np.array([nasalX, nasalY])
+
+    theta = calculateAngleDeg(odCenter, foveaCenter)
     
     if saveNasalPoint is True:
         _, fileName = os.path.split(imagePath)
@@ -197,7 +214,9 @@ def getEdgeDistanceReal(imagePath, odInfo, foveaInfo, saveNasalPoint=True, outpu
         name, ext = os.path.splitext(fileName)
         output_filename = f'{name}_nasal{ext}'
 
-        cv2.circle(image, (int(nasalX), int(nasalY)), radius=5, color=(0,0,255), thickness=-1)
+        cv2.circle(image, (int(nasalX), int(nasalY)), radius=10, color=(255,0,0), thickness=-1)
+        cv2.circle(image, (int(odCenter[0]), int(odCenter[1])), radius=10, color=(255,0,0), thickness=-1)
+        cv2.circle(image, (int(foveaCenter[0]), int(foveaCenter[1])), radius=10, color=(255,0,0), thickness=-1)
         cv2.imwrite(os.path.join(outputPath, output_filename), image)
 
     nasalDistance = calculateDistance(image, nasalUnitVector, nasalPoint)

@@ -30,13 +30,13 @@ def plotHistogramsTwoPlots(df, structure, distance, save_path):
     # adequate images histogram
     axes[0].hist(adequate_nasal, bins=40, color='green', alpha=0.6)
     axes[0].set_title(f'Adequate by Image Field: {structure.capitalize()}-{distance.capitalize()} Edge Distance')
-    axes[0].set_xlabel(f'Normalized {structure.capitalize()}-{distance.capitalize()} Edge Distance')
+    axes[0].set_xlabel(f'Normalized {structure.capitalize()}-{distance.capitalize()} Edge Distance (DD)')
     axes[0].set_ylabel('Density')
 
     # inadequate images histogram
     axes[1].hist(inadequate_nasal, bins=40, color='red', alpha=0.6)
     axes[1].set_title(f'Inadequate by Image Field: {structure.capitalize()}-{distance.capitalize()} Edge Distance')
-    axes[1].set_xlabel(f'Normalized {structure.capitalize()}-{distance.capitalize()} Edge Distance')
+    axes[1].set_xlabel(f'Normalized {structure.capitalize()}-{distance.capitalize()} Edge Distance (DD)')
 
     plt.tight_layout()
     plt.savefig(f"{save_path}/{distance}HistogramTwoPlots.png")
@@ -61,13 +61,34 @@ def plotHistogramsOnePlot(df, structure, distance, save_path):
     sns.kdeplot(inadequate_nasal, color='red', linestyle='-')
 
     plt.title(f'{structure.capitalize()}-{distance.capitalize()} Edge Distance Histogram')
-    plt.xlabel(f'Normalized {structure.capitalize()}-{distance.capitalize()} Edge Distance')
+    plt.xlabel(f'Normalized {structure.capitalize()}-{distance.capitalize()} Edge Distance (DD)')
     plt.ylabel('Density')
     plt.legend()
     plt.grid(True, alpha=0.2)
     plt.tight_layout()
     plt.savefig(f"{save_path}/{distance}HistogramOnePlot.png")
 
+# Plot one histogram for OD-Fovea angle distribution
+# in BRSet
+# Parameters:
+#   - df: filtered (by confidence) dataframe with interest statistics
+#   - save_path: base path to save the histograms
+def plotAnglesHistogram(df, save_path):
+    angles = df['od_fovea_angle']
+
+    plt.figure(figsize=(8,5))
+
+    plt.hist(angles, bins=40, color='tab:blue', density=True, alpha=0.25)
+
+    sns.kdeplot(angles, color='tab:blue', linestyle='-')
+
+    plt.title("Optic Disc / Macular Center angles distribution")
+    plt.xlabel('Optic Disc / Macular Center angle (in degrees)')
+    plt.ylabel('Density')
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(f"{save_path}/angleHistogram.png")
+    
 def main(args):
     df = pd.read_csv(args.data)
     df = normalizeDistances(df)
@@ -75,15 +96,13 @@ def main(args):
     countAdequate = df[df['quality_label'] == 'Adequate'].shape[0]
     countInadequate = df[df['quality_label'] == 'Inadequate'].shape[0]
 
-    # images our model was not able to detect fovea or optic disc
-    missingImages = args.dataset_size - (countAdequate + countInadequate)
+    print(f"Dados antes de filtrar por confiança: {countAdequate} adequadas, {countInadequate} inadequadas")
 
     filtered_df = df[(df['od_confidence'] > 0.8) & (df['fovea_confidence'] > 0.75)]
 
     countAdequate = filtered_df[filtered_df['quality_label'] == 'Adequate'].shape[0]
     countInadequate = filtered_df[filtered_df['quality_label'] == 'Inadequate'].shape[0]
 
-    print(f"Dados antes de filtrar por confiança: {countAdequate} adequadas, {countInadequate} inadequadas")
     print(f"Dados depois de filtrar por confiança: {countAdequate} adequadas, {countInadequate} inadequadas")
 
     plotHistogramsOnePlot(filtered_df, structure='optic disc', distance='nasal', save_path=args.save_path)
@@ -91,8 +110,9 @@ def main(args):
 
     plotHistogramsOnePlot(filtered_df, structure='fovea', distance='temporal', save_path=args.save_path)
     plotHistogramsTwoPlots(filtered_df, structure='fovea', distance='temporal', save_path=args.save_path)
-    
 
+    plotAnglesHistogram(filtered_df, save_path=args.save_path)
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create dataset analysis for BRSet")
 
